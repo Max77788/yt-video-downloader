@@ -4,7 +4,7 @@ import shutil
 import tempfile
 from urllib.parse import quote
 from flask import Flask, request, Response, jsonify
-from yt_dlp import YoutubeDL, requires_authentication
+from yt_dlp import YoutubeDL
 
 from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
