@@ -4,7 +4,7 @@ import shutil
 import tempfile
 from urllib.parse import quote
 from flask import Flask, request, Response, jsonify
-from yt_dlp import YoutubeDL
+from yt_dlp import YoutubeDL, requires_authentication
 
 from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
@@ -50,21 +50,29 @@ def download_video():
     }
     
     ydl_opts.update({
-    'use_oauth':         True,
-    'allow_oauth_cache': True,
-    'oauth_client_id':     os.environ.get('YTDL_OAUTH_CLIENT_ID'),
-    'oauth_client_secret': os.environ.get('YTDL_OAUTH_CLIENT_SECRET'),
+        'use_oauth':         True,
+        'allow_oauth_cache': True,
+        'oauth_client_id':     os.environ.get('YTDL_OAUTH_CLIENT_ID'),
+        'oauth_client_secret': os.environ.get('YTDL_OAUTH_CLIENT_SECRET'),
     })
 
     # Attach cookies file if available
     cookiefile = os.environ.get('YTDL_COOKIES_FILE')
     if cookiefile and os.path.isfile(cookiefile):
         ydl_opts['cookiefile'] = cookiefile
+        
+    print(">>> YTDL is using cookie file:", ydl_opts.get('cookiefile'))
 
     try:
         # Download video
         with YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=True)
+            try:
+                info = ydl.extract_info(video_url, download=True)
+            except Exception as auth_err:
+                # retry anonymously
+                ydl_opts.pop('cookiefile', None)
+                info = ydl.extract_info(video_url, download=True)
+
 
         # Determine final filename
         filepath = ydl.prepare_filename(info)
