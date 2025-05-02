@@ -3,3 +3,4 @@ venv
 *.txt
 *.b64
 script.py
+.env

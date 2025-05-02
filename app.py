@@ -6,6 +6,9 @@ from urllib.parse import quote
 from flask import Flask, request, Response, jsonify
 from yt_dlp import YoutubeDL
 
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv())
+
 app = Flask(__name__)
 
 # On app startup, if COOKIES_BASE64 is set, write it out to /tmp/cookies.txt
@@ -36,6 +39,7 @@ def download_video():
     outtmpl = os.path.join(tmpdir, '%(id)s.%(ext)s')
     
     # Build yt-dlp options
+    
     ydl_opts = {
         'format': 'bestvideo+bestaudio/best',
         'outtmpl': outtmpl,
@@ -44,6 +48,14 @@ def download_video():
         'no_warnings': True,
         'noplaylist': True,
     }
+    
+    ydl_opts.update({
+    'use_oauth':         True,
+    'allow_oauth_cache': True,
+    'oauth_client_id':     os.environ.get('YTDL_OAUTH_CLIENT_ID'),
+    'oauth_client_secret': os.environ.get('YTDL_OAUTH_CLIENT_SECRET'),
+    })
+
     # Attach cookies file if available
     cookiefile = os.environ.get('YTDL_COOKIES_FILE')
     if cookiefile and os.path.isfile(cookiefile):
