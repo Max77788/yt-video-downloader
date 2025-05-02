@@ -2,6 +2,7 @@ import os
 import base64
 import shutil
 import tempfile
+from urllib.parse import quote
 from flask import Flask, request, Response, jsonify
 from yt_dlp import YoutubeDL
 
@@ -14,6 +15,7 @@ if b64:
     cookies_path = os.path.join(tmpdir_env, 'cookies.txt')
     with open(cookies_path, 'wb') as f:
         f.write(base64.b64decode(b64))
+    print(f'Wrote cookies to {cookies_path}')
     # make cookie path available for downloads
     os.environ['YTDL_COOKIES_FILE'] = cookies_path
 
@@ -53,20 +55,23 @@ def download_video():
             info = ydl.extract_info(video_url, download=True)
 
         # Determine final filename
-        filename = ydl.prepare_filename(info)
+        filepath = ydl.prepare_filename(info)
         if ydl_opts.get('merge_output_format'):
-            base, _ = os.path.splitext(filename)
-            filename = f"{base}.{ydl_opts['merge_output_format']}"
+            base, _ = os.path.splitext(filepath)
+            filepath = f"{base}.{ydl_opts['merge_output_format']}"
 
         # Stream file in chunks
         def generate():
-            with open(filename, 'rb') as f:
+            with open(filepath, 'rb') as f:
                 for chunk in iter(lambda: f.read(8192), b""):
                     yield chunk
-
+        
+        # Build a safe download name (Unicode → percent-encoded)
         safe_title = info.get('title', info.get('id')).replace('"', '')
+        download_name = f"{safe_title}.mp4"
+        qname = quote(download_name)
         headers = {
-            'Content-Disposition': f'attachment; filename="{safe_title}.mp4"'
+            'Content-Disposition': f"attachment; filename*=UTF-8''{qname}"
         }
         response = Response(generate(), mimetype='video/mp4', headers=headers)
         # Cleanup after the response completes
