@@ -1,10 +1,21 @@
 import os
+import base64
 import shutil
 import tempfile
 from flask import Flask, request, Response, jsonify
 from yt_dlp import YoutubeDL
 
 app = Flask(__name__)
+
+# On app startup, if COOKIES_BASE64 is set, write it out to /tmp/cookies.txt
+b64 = os.environ.get('COOKIES_BASE64')
+if b64:
+    tmpdir_env = os.environ.get('TMPDIR', '/tmp')
+    cookies_path = os.path.join(tmpdir_env, 'cookies.txt')
+    with open(cookies_path, 'wb') as f:
+        f.write(base64.b64decode(b64))
+    # make cookie path available for downloads
+    os.environ['YTDL_COOKIES_FILE'] = cookies_path
 
 @app.route('/healthz', methods=['GET'])
 def health_check():
@@ -13,46 +24,52 @@ def health_check():
 @app.route('/download', methods=['GET', 'POST'])
 def download_video():
     # Accept URL via query parameter or JSON body
-    video_url = request.args.get('url') or (request.json and request.json.get('url'))
+    data = request.get_json(silent=True) or {}
+    video_url = request.args.get('url') or data.get('url')
     if not video_url:
         return jsonify({'error': "Missing 'url' parameter"}), 400
 
-    # Create temp directory in Render's ephemeral storage (/tmp)
+    # Prepare temp directory in Render's ephemeral storage (/tmp)
     tmpdir = tempfile.mkdtemp(dir=os.environ.get('TMPDIR', '/tmp'))
     outtmpl = os.path.join(tmpdir, '%(id)s.%(ext)s')
+    
+    # Build yt-dlp options
     ydl_opts = {
-        'format': 'bestvideo+bestaudio/best',  # merge best video + audio
+        'format': 'bestvideo+bestaudio/best',
         'outtmpl': outtmpl,
-        'merge_output_format': 'mp4',          # force mp4 container
+        'merge_output_format': 'mp4',
         'quiet': True,
         'no_warnings': True,
         'noplaylist': True,
     }
+    # Attach cookies file if available
+    cookiefile = os.environ.get('YTDL_COOKIES_FILE')
+    if cookiefile and os.path.isfile(cookiefile):
+        ydl_opts['cookiefile'] = cookiefile
 
     try:
+        # Download video
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
 
-        # Determine filename
+        # Determine final filename
         filename = ydl.prepare_filename(info)
         if ydl_opts.get('merge_output_format'):
             base, _ = os.path.splitext(filename)
             filename = f"{base}.{ydl_opts['merge_output_format']}"
 
-        # Stream the file in chunks
+        # Stream file in chunks
         def generate():
             with open(filename, 'rb') as f:
-                while True:
-                    chunk = f.read(8192)
-                    if not chunk:
-                        break
+                for chunk in iter(lambda: f.read(8192), b""):
                     yield chunk
 
+        safe_title = info.get('title', info.get('id')).replace('"', '')
         headers = {
-            'Content-Disposition': f'attachment; filename="{info.get("title", info.get("id"))}.mp4"'
+            'Content-Disposition': f'attachment; filename="{safe_title}.mp4"'
         }
         response = Response(generate(), mimetype='video/mp4', headers=headers)
-        # Cleanup after response completes
+        # Cleanup after the response completes
         response.call_on_close(lambda: shutil.rmtree(tmpdir, ignore_errors=True))
         return response
 
