@@ -44,7 +44,7 @@ def download_video():
         'format': 'bestvideo+bestaudio/best',
         'outtmpl': outtmpl,
         'merge_output_format': 'mp4',
-        'quiet': True,
+        'quiet': False,
         'no_warnings': True,
         'noplaylist': True,
     }
